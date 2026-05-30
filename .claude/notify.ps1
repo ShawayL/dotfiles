@@ -188,7 +188,7 @@ if ($BarkToken) {
     $encodedTitle = [uri]::EscapeDataString($Title)
     $encodedMsg   = [uri]::EscapeDataString($Message)
 
-    $barkUrl = "https://api.day.app/${BarkToken}/${encodedTitle}/${encodedMsg}?icon=https://claude.ai/favicon.ico&group=claude"
+    $barkUrl = "https://api.day.app/${BarkToken}/${encodedTitle}/${encodedMsg}?icon=https://github.com/ShawayL/dotfiles/blob/main/.claude/notify-icon.png?raw=true&group=claude"
 
     $request = [System.Net.HttpWebRequest]::Create($barkUrl)
     $request.Method = "GET"
