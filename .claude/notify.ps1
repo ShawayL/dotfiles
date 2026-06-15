@@ -211,22 +211,22 @@ if (-not $skipToast) {
 # 如果空闲时长突然缩短，说明有新鼠标/键盘操作。
 # 这种比较方式天然免疫 GetTickCount 每 49.7 天溢出回卷的问题。
 function Wait-IdleUntilInput {
-    param([int]$WaitSeconds, $BaseIdleMs)
+    param([int]$WaitSeconds, [uint32]$BaseInputTick)
 
     $rounds = [Math]::Ceiling($WaitSeconds / $IdleCheckInterval)
-    Write-Log "IDLEWAIT" "开始空闲等待: WaitSeconds=$WaitSeconds, CheckInterval=$IdleCheckInterval, 总轮次=$rounds, BaseIdleMs=$BaseIdleMs"
+    Write-Log "IDLEWAIT" "开始空闲等待: WaitSeconds=$WaitSeconds, CheckInterval=$IdleCheckInterval, 总轮次=$rounds, BaseInputTick=$BaseInputTick"
     for ($i = 0; $i -lt $rounds; $i++) {
         Start-Sleep -Seconds $IdleCheckInterval
         $liiNow = New-Object Win32+LASTINPUTINFO
         $liiNow.cbSize = 8
         if ([Win32]::GetLastInputInfo([ref]$liiNow)) {
-            $currentIdleMs = [Win32]::GetTickCount() - $liiNow.dwTime
-            $statusLabel = if ($currentIdleMs -lt $BaseIdleMs) { '用户回归, 退出' } else { '继续等待' }
-            Write-Log "IDLEWAIT" "  轮次 $($i+1)/${rounds}: currentIdleMs=${currentIdleMs}, BaseIdleMs=${BaseIdleMs} -> ${statusLabel}"
-            if ($currentIdleMs -lt $BaseIdleMs) {
-                Write-Log "IDLEWAIT" "检测到用户输入，脚本正常退出"
+            # 最后输入时间戳变了 = 期间有新的鼠标/键盘操作 = 人回来了
+            # 只比较 dwTime 是否变化，天然免疫 0 基准失效与 GetTickCount 回卷问题
+            if ($liiNow.dwTime -ne $BaseInputTick) {
+                Write-Log "IDLEWAIT" "  轮次 $($i+1)/${rounds}: dwTime ${BaseInputTick} -> $($liiNow.dwTime)，检测到用户输入，退出"
                 exit 0
             }
+            Write-Log "IDLEWAIT" "  轮次 $($i+1)/${rounds}: dwTime 未变化 ($($liiNow.dwTime))，继续等待"
         } else {
             Write-Log "IDLEWAIT" "  轮次 $($i+1)/${rounds}: GetLastInputInfo 失败"
         }
@@ -256,7 +256,7 @@ if ($BarkToken) {
     if ($baseIdleMs -lt $timeoutMs) {
         $remainSeconds = [int](($timeoutMs - $baseIdleMs) / 1000)
         Write-Log "PHASE3" "空闲时长 ($baseIdleMs ms) < 超时阈值 ($timeoutMs ms), 需等待 ${remainSeconds}s 后进入超时"
-        Wait-IdleUntilInput $remainSeconds $baseIdleMs
+        Wait-IdleUntilInput $remainSeconds $lii.dwTime
     } else {
         Write-Log "PHASE3" "空闲时长 ($baseIdleMs ms) >= 超时阈值 ($timeoutMs ms), 已超时，直接进入挽留/Bark阶段"
     }
@@ -268,7 +268,12 @@ if ($BarkToken) {
         Send-Toast $Title $Message
         if ($BarkGracePeriod -gt 0) {
             Write-Log "PHASE3" "BarkGracePeriod=$BarkGracePeriod > 0, 进入挽留等待"
-            Wait-IdleUntilInput $BarkGracePeriod $baseIdleMs
+            # 重新读一次当前的最后输入时间戳作基准，精确捕捉"看到挽留 Toast 之后"的操作
+            $liiGrace = New-Object Win32+LASTINPUTINFO
+            $liiGrace.cbSize = 8
+            [Win32]::GetLastInputInfo([ref]$liiGrace) | Out-Null
+            Write-Log "PHASE3" "挽留等待基准 dwTime=$($liiGrace.dwTime)"
+            Wait-IdleUntilInput $BarkGracePeriod $liiGrace.dwTime
         } else {
             Write-Log "PHASE3" "BarkGracePeriod=0, 跳过挽留等待"
         }
