@@ -292,6 +292,7 @@ if ($BarkToken) {
     $request = [System.Net.HttpWebRequest]::Create($barkUrl)
     $request.Method = "GET"
     $request.Timeout = 10000
+    $request.Proxy = $null
     try {
         $response = $request.GetResponse()
         Write-Log "BARK" "Bark 推送成功: HTTP $($response.StatusCode)"
